@@ -40,6 +40,11 @@ with their Gmail account, bypassing the need for SMTP configuration.
 7. Click OK. The newly created credential appears under OAuth 2.0 Client IDs.
 8. Download the JSON file.
 
+Note: the oauth2.dance site is mentioned in the [google sendgmail readme] so
+while I assume it is trustworthy, I cannot personally vouch for it.
+
+[google sendgmail readme]: https://github.com/google/gmail-oauth2-tools/tree/master/go/sendgmail#obtaining-oauth2-credentials-for-sendgmail
+
 ### Set up credentials
 
 1. Create a directory for configuration:
