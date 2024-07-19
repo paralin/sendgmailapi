@@ -71,8 +71,7 @@ Once set up, you can use SendGmailAPI to send emails. The application reads the 
 Add to your .gitconfig at ~/.gitconfig:
 
 ```
-[sendemail]
-  smtpServer = /Users/cjs/go/bin/sendgmailapi
+git config --global sendemail.smtpServer $(go env GOPATH)/bin/sendgmailapi
 ```
 
 Or to send a simple email:
