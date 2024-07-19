@@ -16,6 +16,12 @@ import (
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/option"
+	"math/rand"
+	"time"
+)
+
+const (
+	redirectURI = "http://localhost:8090"
 )
 
 var (
@@ -61,16 +67,54 @@ func tokenFromFile(file string) (*oauth2.Token, error) {
 }
 
 func getTokenFromWeb(config *oauth2.Config) (*oauth2.Token, error) {
-	authURL := config.AuthCodeURL("state-token", oauth2.AccessTypeOffline)
-	fmt.Printf("Go to the following link in your browser then type the "+
-		"authorization code: \n%v\n", authURL)
+	state := fmt.Sprintf("%d", rand.Int())
 
-	var authCode string
-	if _, err := fmt.Scan(&authCode); err != nil {
-		return nil, fmt.Errorf("unable to read authorization code: %v", err)
+	ch := make(chan string)
+	errCh := make(chan error)
+	server := &http.Server{Addr: redirectURI[7:]} // Remove "http://" from the beginning
+
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.FormValue("state") != state {
+			errCh <- fmt.Errorf("invalid state")
+			http.Error(w, "Invalid state", http.StatusBadRequest)
+			return
+		}
+		ch <- r.FormValue("code")
+		fmt.Fprintf(w, "Authorization successful! You can close this window now.")
+		go func() {
+			time.Sleep(time.Second)
+			if err := server.Shutdown(context.Background()); err != nil {
+				log.Printf("Error shutting down server: %v", err)
+			}
+		}()
+	})
+
+	go func() {
+		if err := server.ListenAndServe(); err != http.ErrServerClosed {
+			errCh <- fmt.Errorf("HTTP server error: %v", err)
+		}
+	}()
+
+	config.RedirectURL = redirectURI
+	authURL := config.AuthCodeURL(state, oauth2.AccessTypeOffline)
+	fmt.Printf("Listening on %s\n", redirectURI)
+	fmt.Printf("Please visit this URL to authorize the application:\n%v\n", authURL)
+
+	var code string
+	select {
+	case code = <-ch:
+		// Received the code successfully
+	case err := <-errCh:
+		return nil, fmt.Errorf("error during authorization: %v", err)
+	case <-time.After(2 * time.Minute):
+		return nil, fmt.Errorf("authorization timed out")
 	}
 
-	tok, err := config.Exchange(context.TODO(), authCode)
+	tok, err := config.Exchange(context.Background(), code)
 	if err != nil {
 		return nil, fmt.Errorf("unable to retrieve token from web: %v", err)
 	}

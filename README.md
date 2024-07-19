@@ -34,16 +34,13 @@ with their Gmail account, bypassing the need for SMTP configuration.
 1. In the Google Cloud console, go to [Credentials](https://console.cloud.google.com/apis/credentials).
 2. Click Create Credentials > OAuth client ID.
 3. Click Application type > Web application.
-4. In the Name field, type a name for the credential.
-5. Add https://oauth2.dance/ as an authorized redirect URI.
+4. In the Name field, type a name for the credential like "sendgmailapi".
+5. Add http://localhost:8090 as an authorized redirect URI.
 6. Click Create. The OAuth client created screen appears, showing your new Client ID and Client secret.
 7. Click OK. The newly created credential appears under OAuth 2.0 Client IDs.
 8. Download the JSON file.
 
-Note: the oauth2.dance site is mentioned in the [google sendgmail readme] so
-while I assume it is trustworthy, I cannot personally vouch for it.
-
-[google sendgmail readme]: https://github.com/google/gmail-oauth2-tools/tree/master/go/sendgmail#obtaining-oauth2-credentials-for-sendgmail
+Note: This application now uses a local server to handle the OAuth2 flow, which is more secure and doesn't rely on external services.
 
 ### Set up credentials
 
@@ -70,6 +67,14 @@ Install sendgmailapi:
 ```
 go get github.com/paralin/sendgmailapi@latest
 ```
+
+Run the setup to get the token:
+
+```
+sendgmailapi -setup
+```
+
+This will open a browser window for you to authorize the application and generate the token.
 
 Once set up, you can use SendGmailAPI to send emails. The application reads the email content from standard input.
 
