@@ -18,6 +18,11 @@ import (
 	"google.golang.org/api/option"
 )
 
+var (
+	dummyF string
+	dummyI bool
+)
+
 func getConfig(file string) (*oauth2.Config, error) {
 	b, err := os.ReadFile(file)
 	if err != nil {
@@ -93,6 +98,8 @@ func setupMode(config *oauth2.Config, tokenFile string) {
 
 func main() {
 	setupFlag := flag.Bool("setup", false, "Run in setup mode")
+	flag.StringVar(&dummyF, "f", "", "Dummy flag for compatibility with sendmail.")
+	flag.BoolVar(&dummyI, "i", true, "Dummy flag for compatibility with sendmail.")
 	flag.Parse()
 
 	homeDir, err := os.UserHomeDir()
