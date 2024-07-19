@@ -37,8 +37,7 @@ with their Gmail account, bypassing the need for SMTP configuration.
 4. In the Name field, type a name for the credential like "sendgmailapi".
 5. Add http://localhost:8090 as an authorized redirect URI.
 6. Click Create. The OAuth client created screen appears, showing your new Client ID and Client secret.
-7. Click OK. The newly created credential appears under OAuth 2.0 Client IDs.
-8. Download the JSON file.
+7. Download the JSON file with the credentials.
 
 Note: This application now uses a local server to handle the OAuth2 flow, which is more secure and doesn't rely on external services.
 
