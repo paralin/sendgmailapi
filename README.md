@@ -15,6 +15,10 @@ SendGmailAPI is a Go application that allows you to send emails using the Gmail
 API. It's particularly useful for developers who want to use `git send-email`
 with their Gmail account, bypassing the need for SMTP configuration.
 
+> **Warning**: Gmail [automatically wraps emails to 72 characters], which breaks patches sent with `git send-email`.
+
+[automatically wraps emails to 72 characters]: https://github.com/google/gmail-oauth2-tools/issues/32#issuecomment-2401237305
+
 ## Setup
 
 ### Enable the API
