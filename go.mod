@@ -1,4 +1,4 @@
-module sendgmailapi
+module github.com/paralin/sendgmailapi
 
 go 1.22.5
 

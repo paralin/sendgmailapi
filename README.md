@@ -68,13 +68,13 @@ Note: This application now uses a local server to handle the OAuth2 flow, which 
 Install sendgmailapi:
 
 ```
-go get github.com/paralin/sendgmailapi@latest
+go install github.com/paralin/sendgmailapi@latest
 ```
 
 Run the setup to get the token:
 
 ```
-sendgmailapi -setup
+$(go env GOPATH)/bin/sendgmailapi -setup
 ```
 
 This will open a browser window for you to authorize the application and generate the token.
