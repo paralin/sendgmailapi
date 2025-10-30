@@ -3,8 +3,8 @@ module github.com/paralin/sendgmailapi
 go 1.22.5
 
 require (
-	golang.org/x/oauth2 v0.22.0
-	google.golang.org/api v0.195.0
+	golang.org/x/oauth2 v0.32.0
+	google.golang.org/api v0.254.0
 )
 
 require (
