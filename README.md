@@ -20,89 +20,96 @@ that rewrite by converting plain-text message bodies to quoted-printable MIME.
 The transport lines remain within the MIME limit, and the recipient's mail
 client reconstructs the original patch lines.
 
-## Setup
+## Quick start
 
-### Enable the API
+Install the command:
 
-1. Go to the [Google Cloud console](https://console.cloud.google.com/marketplace/product/google/gmail.googleapis.com) and enable the Gmail API.
-
-### Configure the OAuth consent screen
-
-1. In the Google Cloud console, go to [OAuth consent screen](https://console.cloud.google.com/apis/credentials/consent).
-2. For User type, select Internal, then click Create.
-3. Complete the app registration form, then click Save and Continue.
-4. Skip adding scopes and click Save and Continue.
-5. Review your app registration summary. To make changes, click Edit. If the app registration looks OK, click Back to Dashboard.
-
-### Authorize credentials for a web application
-
-1. In the Google Cloud console, go to [Credentials](https://console.cloud.google.com/apis/credentials).
-2. Click Create Credentials > OAuth client ID.
-3. Click Application type > Web application.
-4. In the Name field, type a name for the credential like "sendgmailapi".
-5. Add http://localhost:8090 as an authorized redirect URI.
-6. Click Create. The OAuth client created screen appears, showing your new Client ID and Client secret.
-7. Download the JSON file with the credentials.
-
-Note: This application now uses a local server to handle the OAuth2 flow, which is more secure and doesn't rely on external services.
-
-### Set up credentials
-
-1. Create a directory for configuration:
-   ```
-   mkdir -p ~/.config/sendgmail
-   chmod 0700 ~/.config/sendgmail
-   ```
-2. Move the downloaded JSON file to this directory:
-   ```
-   mv ~/Downloads/client_secret*.json ~/.config/sendgmail/credentials.json
-   chmod 0600 ~/.config/sendgmail/credentials.json
-   ```
-
-### Add test user
-
-1. Go back to APIs & Services > OAuth consent screen in the Google Cloud console.
-2. Add your Gmail address (e.g., USERNAME@gmail.com) as a test user.
-
-## Usage
-
-Install sendgmailapi:
-
-```
+```sh
 go install github.com/paralin/sendgmailapi@latest
 ```
 
-Run the setup to get the token:
+Start the interactive setup wizard:
 
-```
-$(go env GOPATH)/bin/sendgmailapi -setup
-```
-
-This will open a browser window for you to authorize the application and generate the token.
-
-Once set up, you can use SendGmailAPI to send emails. The application reads the email content from standard input.
-
-Add to your .gitconfig at ~/.gitconfig:
-
-```
-git config --global sendemail.smtpServer $(go env GOPATH)/bin/sendgmailapi
+```sh
+sendgmailapi setup
 ```
 
-Or to send a simple email:
+The wizard opens each Google Cloud page and pauses while you complete these
+steps:
 
-```
-echo "Subject: Test Email
-To: recipient@example.com
-Content-Type: text/plain; charset=UTF-8
+1. Select or create a Google Cloud project and enable the Gmail API.
+2. Configure the OAuth consent screen in Google Auth Platform. Enter the app
+   name and contact email, choose **Internal** only for the intended Google
+   Workspace organization, or choose **External**, then finish and save the
+   initial app configuration.
+3. After saving the app, open **Data Access**, click **Add or remove scopes**,
+   select `https://www.googleapis.com/auth/gmail.send`, click **Update**, and
+   save the Data Access changes.
+4. For an External app in Testing, open **Audience** and add your Gmail address
+   under **Test users**. Google may expire refresh tokens after seven days
+   while the app remains in Testing. Move it to Production for lasting
+   authorization; Google may show an unverified-app warning or require
+   verification.
+5. Create a **Web application** OAuth client. Add
+   `http://localhost:8090` under **Authorized redirect URIs** exactly as shown.
+6. Download the client JSON. The wizard finds it in `~/Downloads`, or asks for
+   its path.
+7. Sign in to Google and approve the `gmail.send` permission.
+8. Let the wizard configure `git send-email`.
 
-This is a test email." | sendgmailapi
+Use the same Google Cloud project for the Gmail API, consent screen, audience,
+and OAuth client. Enter an app name such as `SendGmailAPI`, and select your
+email address for the user-support and developer-contact fields.
+
+You can also give the downloaded file directly:
+
+```sh
+sendgmailapi setup ~/Downloads/client_secret_....json
 ```
 
-Inspect the Gmail-safe MIME message without sending it:
+If the Google consent screen is in testing mode, add your Gmail account as a
+test user before signing in. The wizard stores the OAuth client and token with
+private file permissions under `~/.config/sendgmail/`.
 
+Check the setup without sending mail:
+
+```sh
+sendgmailapi doctor
 ```
-sendgmailapi -encode-only < message.eml
+
+## Send patches
+
+After setup, use `git send-email` normally:
+
+```sh
+git send-email --to recipient@example.com outgoing/*.patch
 ```
+
+SendGmailAPI runs as the configured sendmail command. It converts plain-text
+messages to quoted-printable MIME before calling the Gmail API, so Gmail does
+not wrap long patch lines.
+
+## Other commands
+
+Send an RFC 5322 message directly:
+
+```sh
+cat message.eml | sendgmailapi
+```
+
+Inspect the Gmail-safe MIME without sending it:
+
+```sh
+sendgmailapi encode < message.eml
+```
+
+Show command help:
+
+```sh
+sendgmailapi help
+```
+
+The legacy `-setup` and `-encode-only` flags remain available.
 
 ## License
 
