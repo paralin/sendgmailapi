@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -11,18 +13,15 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/option"
-	"math/rand"
-	"time"
 )
 
-const (
-	redirectURI = "http://localhost:8090"
-)
+const redirectURI = "http://localhost:8090"
 
 var (
 	dummyF string
@@ -32,12 +31,12 @@ var (
 func getConfig(file string) (*oauth2.Config, error) {
 	b, err := os.ReadFile(file)
 	if err != nil {
-		return nil, fmt.Errorf("unable to read client secret file: %v", err)
+		return nil, fmt.Errorf("read client secret file: %w", err)
 	}
 
 	config, err := google.ConfigFromJSON(b, gmail.GmailSendScope)
 	if err != nil {
-		return nil, fmt.Errorf("unable to parse client secret file to config: %v", err)
+		return nil, fmt.Errorf("parse client secret file: %w", err)
 	}
 
 	return config, nil
@@ -50,7 +49,9 @@ func getClient(config *oauth2.Config, tokenFile string) (*http.Client, error) {
 		if err != nil {
 			return nil, err
 		}
-		saveToken(tokenFile, tok)
+		if err := saveToken(tokenFile, tok); err != nil {
+			return nil, err
+		}
 	}
 	return config.Client(context.Background(), tok), nil
 }
@@ -61,133 +62,170 @@ func tokenFromFile(file string) (*oauth2.Token, error) {
 		return nil, err
 	}
 	defer f.Close()
+
 	tok := &oauth2.Token{}
-	err = json.NewDecoder(f).Decode(tok)
-	return tok, err
+	if err := json.NewDecoder(f).Decode(tok); err != nil {
+		return nil, err
+	}
+	return tok, nil
 }
 
 func getTokenFromWeb(config *oauth2.Config) (*oauth2.Token, error) {
-	state := fmt.Sprintf("%d", rand.Int())
+	stateBytes := make([]byte, 32)
+	if _, err := rand.Read(stateBytes); err != nil {
+		return nil, fmt.Errorf("create OAuth state: %w", err)
+	}
+	state := hex.EncodeToString(stateBytes)
 
-	ch := make(chan string)
-	errCh := make(chan error)
-	server := &http.Server{Addr: redirectURI[7:]} // Remove "http://" from the beginning
+	codeCh := make(chan string, 1)
+	errCh := make(chan error, 1)
+	mux := http.NewServeMux()
+	server := &http.Server{
+		Addr:              redirectURI[7:],
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
 			return
 		}
 		if r.FormValue("state") != state {
-			errCh <- fmt.Errorf("invalid state")
+			errCh <- fmt.Errorf("invalid OAuth state")
 			http.Error(w, "Invalid state", http.StatusBadRequest)
 			return
 		}
-		ch <- r.FormValue("code")
-		fmt.Fprintf(w, "Authorization successful! You can close this window now.")
+
+		codeCh <- r.FormValue("code")
+		_, _ = fmt.Fprintln(w, "Authorization successful. You can close this window.")
 		go func() {
-			time.Sleep(time.Second)
 			if err := server.Shutdown(context.Background()); err != nil {
-				log.Printf("Error shutting down server: %v", err)
+				log.Printf("shut down OAuth server: %v", err)
 			}
 		}()
 	})
 
 	go func() {
-		if err := server.ListenAndServe(); err != http.ErrServerClosed {
-			errCh <- fmt.Errorf("HTTP server error: %v", err)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			errCh <- fmt.Errorf("serve OAuth callback: %w", err)
 		}
 	}()
 
 	config.RedirectURL = redirectURI
 	authURL := config.AuthCodeURL(state, oauth2.AccessTypeOffline)
 	fmt.Printf("Listening on %s\n", redirectURI)
-	fmt.Printf("Please visit this URL to authorize the application:\n%v\n", authURL)
+	fmt.Printf("Visit this URL to authorize the application:\n%s\n", authURL)
 
 	var code string
 	select {
-	case code = <-ch:
-		// Received the code successfully
+	case code = <-codeCh:
 	case err := <-errCh:
-		return nil, fmt.Errorf("error during authorization: %v", err)
+		return nil, err
 	case <-time.After(2 * time.Minute):
 		return nil, fmt.Errorf("authorization timed out")
 	}
 
 	tok, err := config.Exchange(context.Background(), code)
 	if err != nil {
-		return nil, fmt.Errorf("unable to retrieve token from web: %v", err)
+		return nil, fmt.Errorf("exchange OAuth code: %w", err)
 	}
 	return tok, nil
 }
 
-func saveToken(path string, token *oauth2.Token) {
+func saveToken(path string, token *oauth2.Token) error {
 	fmt.Printf("Saving credential file to: %s\n", path)
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
-		log.Fatalf("Unable to cache oauth token: %v", err)
+		return fmt.Errorf("open OAuth token file: %w", err)
 	}
 	defer f.Close()
-	json.NewEncoder(f).Encode(token)
+
+	if err := json.NewEncoder(f).Encode(token); err != nil {
+		return fmt.Errorf("write OAuth token file: %w", err)
+	}
+	return nil
 }
 
-func setupMode(config *oauth2.Config, tokenFile string) {
+func setupMode(config *oauth2.Config, tokenFile string) error {
 	tok, err := getTokenFromWeb(config)
 	if err != nil {
-		log.Fatalf("Unable to get token from web: %v", err)
+		return err
 	}
-	saveToken(tokenFile, tok)
+	if err := saveToken(tokenFile, tok); err != nil {
+		return err
+	}
 	fmt.Println("Setup completed successfully!")
+	return nil
 }
 
-func main() {
+func run() error {
 	setupFlag := flag.Bool("setup", false, "Run in setup mode")
-	flag.StringVar(&dummyF, "f", "", "Dummy flag for compatibility with sendmail.")
-	flag.BoolVar(&dummyI, "i", true, "Dummy flag for compatibility with sendmail.")
+	encodeOnlyFlag := flag.Bool("encode-only", false, "Write the Gmail-safe MIME message to standard output")
+	flag.StringVar(&dummyF, "f", "", "Dummy flag for sendmail compatibility")
+	flag.BoolVar(&dummyI, "i", true, "Dummy flag for sendmail compatibility")
 	flag.Parse()
+
+	if *encodeOnlyFlag {
+		message, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return fmt.Errorf("read message: %w", err)
+		}
+		message, err = encodeQuotedPrintable(message)
+		if err != nil {
+			return fmt.Errorf("encode message: %w", err)
+		}
+		if _, err := os.Stdout.Write(message); err != nil {
+			return fmt.Errorf("write encoded message: %w", err)
+		}
+		return nil
+	}
 
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		log.Fatalf("Unable to get user config directory: %v", err)
+		return fmt.Errorf("find user home directory: %w", err)
 	}
 
 	credentialsFile := filepath.Join(homeDir, ".config", "sendgmail", "credentials.json")
 	tokenFile := filepath.Join(homeDir, ".config", "sendgmail", "token.json")
-
 	config, err := getConfig(credentialsFile)
 	if err != nil {
-		log.Fatalf("Unable to get OAuth2 config: %v", err)
+		return fmt.Errorf("load OAuth config: %w", err)
 	}
 
 	if *setupFlag {
-		setupMode(config, tokenFile)
-		return
+		return setupMode(config, tokenFile)
 	}
 
 	client, err := getClient(config, tokenFile)
 	if err != nil {
-		log.Fatalf("Unable to get OAuth2 client: %v", err)
+		return fmt.Errorf("create OAuth client: %w", err)
 	}
-
-	ctx := context.Background()
-	gmailService, err := gmail.NewService(ctx, option.WithHTTPClient(client))
+	gmailService, err := gmail.NewService(context.Background(), option.WithHTTPClient(client))
 	if err != nil {
-		log.Fatalf("Unable to create Gmail service: %v", err)
+		return fmt.Errorf("create Gmail service: %w", err)
 	}
 
 	message, err := io.ReadAll(os.Stdin)
 	if err != nil {
-		log.Fatalf("Failed to read message: %v", err)
+		return fmt.Errorf("read message: %w", err)
 	}
-
-	gmsg := &gmail.Message{
-		Raw: base64.URLEncoding.EncodeToString(message),
-	}
-
-	_, err = gmailService.Users.Messages.Send("me", gmsg).Do()
+	message, err = encodeQuotedPrintable(message)
 	if err != nil {
-		log.Fatalf("Unable to send email: %v", err)
+		return fmt.Errorf("encode message: %w", err)
+	}
+
+	gmsg := &gmail.Message{Raw: base64.RawURLEncoding.EncodeToString(message)}
+	if _, err := gmailService.Users.Messages.Send("me", gmsg).Do(); err != nil {
+		return fmt.Errorf("send email: %w", err)
 	}
 
 	fmt.Println("Message sent successfully!")
+	return nil
+}
+
+func main() {
+	if err := run(); err != nil {
+		log.Fatal(err)
+	}
 }
